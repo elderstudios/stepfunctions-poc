@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  migration-poc
+
+  Sample SAM Template for migration-poc
+
+Resources:
+  MigrationsStateMachine:
+    Type: AWS::Serverless::StateMachine # More info about State Machine Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-statemachine.html
+    Properties:
+      DefinitionUri: statemachine/migrationPoc.asl.json
+      DefinitionSubstitutions:
+        AccountTransformerFunctionArn: !GetAtt AccountTransformerFunction.Arn
+        ManualRetryFunctionName: !Ref ManualRetryFunction
+        DDBPutItem: !Sub arn:${AWS::Partition}:states:::dynamodb:putItem
+        DDBGetItem: !Sub arn:${AWS::Partition}:states:::dynamodb:getItem
+        DDBMigrationsTable: !Ref MigrationsTable
+        DDBAccountsSalesforceTable: !Ref AccountsSalesforceTable
+      Policies: # Find out more about SAM policy templates: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - LambdaInvokePolicy:
+            FunctionName: !Ref AccountTransformerFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref ManualRetryFunction
+        - DynamoDBWritePolicy:
+            TableName: !Ref MigrationsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref AccountsSalesforceTable
+
+  AccountTransformerFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
+    Properties:
+      CodeUri: functions/AccountTransformer
+      Handler: AccountTransformer.src.main.java.accountTransformer.App::handleRequest
+      Runtime: java11
+      MemorySize: 512
+
+  ManualRetryFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
+    Properties:
+      CodeUri: functions/ManualRetry
+      Handler: ManualRetry.src.main.java.manualRetry.App::handleRequest
+      Runtime: java11
+      MemorySize: 512
+      Policies:
+        - DynamoDBWritePolicy:
+            TableName: !Ref MigrationsTable
+      Environment:
+        Variables:
+          MIGRATIONS_TABLE_NAME: !Ref MigrationsTable
+
+  AccountsSalesforceTable:
+    Type: AWS::Serverless::SimpleTable # More info about SimpleTable Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-simpletable.html
+    Properties:
+      PrimaryKey:
+        Name: AccountId
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  MigrationsTable:
+    Type: AWS::Serverless::SimpleTable # More info about SimpleTable Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-simpletable.html
+    Properties:
+      PrimaryKey:
+        Name: Id
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+Outputs:
+  MigrationsStateMachineArn:
+    Description: "Migration POC State machine ARN"
+    Value: !Ref MigrationsStateMachine
+  MigrationsStateMachineRoleArn:
+    Description: "IAM Role created for Migration POC State machine based on the specified SAM Policy Templates"
+    Value: !GetAtt MigrationsStateMachineRole.Arn

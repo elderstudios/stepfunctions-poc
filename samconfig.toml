@@ -1,0 +1,10 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "ams-migration-poc"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1b2g59995wt8u"
+s3_prefix = "ams-migration-poc"
+region = "eu-west-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"

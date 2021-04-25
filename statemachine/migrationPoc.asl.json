@@ -1,0 +1,125 @@
+{
+    "Comment": "A POC state machine that migrates AMS Accounts to RAM",
+    "StartAt": "Record Start of Migration",
+    "States": {
+        "Record Start of Migration": {
+            "Type": "Task",
+            "Resource": "${DDBPutItem}",
+            "ResultPath": null,
+            "Parameters": {
+                "TableName": "${DDBMigrationsTable}",
+                "Item": {
+                    "Id": {
+                        "S.$": "$$.Execution.Input.AccountId"
+                    },
+                    "Execution": {
+                        "S.$": "$$.Execution.Id"
+                    },
+                    "Status": {
+                        "S": "START"
+                    },
+                    "Timestamp": {
+                        "S.$": "$$.State.EnteredTime"
+                    }
+                }
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "States.TaskFailed"
+                    ],
+                    "IntervalSeconds": 20,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 10
+                }
+            ],
+            "Next": "Get SalesforceID From Mapping Table"
+        },
+        "Get SalesforceID From Mapping Table": {
+            "Type": "Task",
+            "Resource": "${DDBGetItem}",
+            "Parameters": {
+              "TableName": "${DDBAccountsSalesforceTable}",
+              "Key": {
+                "AccountId": {"S.$": "$.AccountId"}
+              }
+            },
+            "ResultPath": "$.DynamoDB",
+            "Next": "Is SalesforceID In Mapping Table"
+        },
+        "Is SalesforceID In Mapping Table": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable":"$.DynamoDB.Item.SalesforceId.S",
+                    "IsPresent":true,
+                    "Next":"Transform Account"
+                  }
+                ],
+                "Default": "Account SFID Missing"
+        },
+        "Account SFID Missing": {
+            "Type": "Task",
+            "Resource": "${DDBPutItem}",
+            "ResultPath": null,
+            "Parameters": {
+                "TableName": "${DDBMigrationsTable}",
+                "Item": {
+                    "Id": {
+                        "S.$": "$$.Execution.Input.AccountId"
+                    },
+                    "Execution": {
+                        "S.$": "$$.Execution.Id"
+                    },
+                    "Status": {
+                        "S": "SFID_MISSING"
+                    },
+                    "Timestamp": {
+                        "S.$": "$$.State.EnteredTime"
+                    }
+                }
+            },
+            "Next": "Notify Account SFID Missing"
+        },
+        "Notify Account SFID Missing": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+            "ResultPath": null,
+            "Parameters":{
+                "FunctionName": "${ManualRetryFunctionName}",
+                "Payload": {
+                    "accountId.$":"$.AccountId",
+                    "token.$":"$$.Task.Token",
+                    "message": "Account SFID Not Found"
+                }
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "States.TaskFailed"
+                    ],
+                    "IntervalSeconds": 15,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 1.5
+                }
+            ],
+            "Next": "Get SalesforceID From Mapping Table"
+        },
+        "Transform Account": {
+            "Type": "Task",
+            "Resource": "${AccountTransformerFunctionArn}",
+            "ResultPath": null,
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "States.TaskFailed"
+                    ],
+                    "IntervalSeconds": 15,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 1.5
+                }
+            ],
+            "End": true
+        }
+    }
+}
