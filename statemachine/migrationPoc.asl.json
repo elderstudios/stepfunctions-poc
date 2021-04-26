@@ -5,7 +5,10 @@
         "Record Start of Migration": {
             "Type": "Task",
             "Resource": "${DDBPutItem}",
-            "ResultPath": null,
+            "ResultPath": "$",
+            "ResultSelector": {
+                "AmsAccountId.$": "$$.Execution.Input.AccountId"
+            },
             "Parameters": {
                 "TableName": "${DDBMigrationsTable}",
                 "Item": {
@@ -41,7 +44,7 @@
             "Parameters": {
               "TableName": "${DDBAccountsSalesforceTable}",
               "Key": {
-                "AccountId": {"S.$": "$.AccountId"}
+                "AccountId": {"S.$": "$$.Execution.Input.AccountId"}
               }
             },
             "ResultPath": "$.DynamoDB",
@@ -50,11 +53,11 @@
         "Is SalesforceID In Mapping Table": {
             "Type": "Choice",
             "Choices": [
-                {
+                    {
                     "Variable":"$.DynamoDB.Item.SalesforceId.S",
                     "IsPresent":true,
-                    "Next":"Transform Account"
-                  }
+                    "Next":"Enrich Task with SFID"
+                    }
                 ],
                 "Default": "Account SFID Missing"
         },
@@ -88,7 +91,7 @@
             "Parameters":{
                 "FunctionName": "${ManualRetryFunctionName}",
                 "Payload": {
-                    "accountId.$":"$.AccountId",
+                    "accountId.$":"$$.Execution.Input.AccountId",
                     "token.$":"$$.Task.Token",
                     "message": "Account SFID Not Found"
                 }
@@ -105,10 +108,74 @@
             ],
             "Next": "Get SalesforceID From Mapping Table"
         },
+        "Enrich Task with SFID": {
+            "Type": "Pass",
+            "Parameters": {
+              "AmsAccountId.$": "$.AmsAccountId",
+              "SalesforceId.$": "$.DynamoDB.Item.SalesforceId.S"
+            },
+            "ResultPath": "$",
+            "Next": "Find Account In Database"
+        },
+        "Find Account In Database": {
+            "Type": "Task",
+            "Resource": "${AccountFinderFunctionArn}",
+            "Parameters": {
+                "SalesforceId.$": "$.SalesforceId",
+                "AmsAccountId.$": "$.AmsAccountId"
+            },
+            "ResultPath": "$.accountExists",
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "States.TaskFailed"
+                    ],
+                    "IntervalSeconds": 15,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 1.5
+                }
+            ],
+            "Next": "Is Account In Database Already"
+        },
+        "Is Account In Database Already": {
+            "Type": "Choice",
+            "Choices": [
+                {
+                    "Variable":"$.accountExists.accountPresent",
+                    "StringEquals": "true",
+                    "Next":"Notify Account Already Exists"
+                  }
+                ],
+                "Default": "Transform Account"
+        },
+        "Notify Account Already Exists": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
+            "ResultPath": null,
+            "Parameters":{
+                "FunctionName": "${ManualRetryFunctionName}",
+                "Payload": {
+                    "accountId.$":"$.AmsAccountId",
+                    "token.$":"$$.Task.Token",
+                    "message": "Account Already Exists"
+                }
+            },
+            "Retry": [
+                {
+                    "ErrorEquals": [
+                        "States.TaskFailed"
+                    ],
+                    "IntervalSeconds": 15,
+                    "MaxAttempts": 5,
+                    "BackoffRate": 1.5
+                }
+            ],
+            "Next": "Find Account In Database"
+        },
         "Transform Account": {
             "Type": "Task",
             "Resource": "${AccountTransformerFunctionArn}",
-            "ResultPath": null,
+            "ResultPath": "$",
             "Retry": [
                 {
                     "ErrorEquals": [

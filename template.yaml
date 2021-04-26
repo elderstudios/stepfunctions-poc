@@ -13,6 +13,7 @@ Resources:
       DefinitionSubstitutions:
         AccountTransformerFunctionArn: !GetAtt AccountTransformerFunction.Arn
         ManualRetryFunctionName: !Ref ManualRetryFunction
+        AccountFinderFunctionArn: !GetAtt AccountFinderFunction.Arn
         DDBPutItem: !Sub arn:${AWS::Partition}:states:::dynamodb:putItem
         DDBGetItem: !Sub arn:${AWS::Partition}:states:::dynamodb:getItem
         DDBMigrationsTable: !Ref MigrationsTable
@@ -22,6 +23,8 @@ Resources:
             FunctionName: !Ref AccountTransformerFunction
         - LambdaInvokePolicy:
             FunctionName: !Ref ManualRetryFunction
+        - LambdaInvokePolicy:
+            FunctionName: !Ref AccountFinderFunction
         - DynamoDBWritePolicy:
             TableName: !Ref MigrationsTable
         - DynamoDBReadPolicy:
@@ -32,6 +35,14 @@ Resources:
     Properties:
       CodeUri: functions/AccountTransformer
       Handler: AccountTransformer.src.main.java.accountTransformer.App::handleRequest
+      Runtime: java11
+      MemorySize: 512
+
+  AccountFinderFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/sam-resource-function.html
+    Properties:
+      CodeUri: functions/AccountFinder
+      Handler: AccountFinder.src.main.java.accountFinder.App::handleRequest
       Runtime: java11
       MemorySize: 512
 
