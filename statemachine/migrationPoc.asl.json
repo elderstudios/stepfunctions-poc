@@ -44,7 +44,7 @@
             "Parameters": {
               "TableName": "${DDBAccountsSalesforceTable}",
               "Key": {
-                "AccountId": {"S.$": "$$.Execution.Input.AccountId"}
+                "AccountId": {"S.$": "$.AmsAccountId"}
               }
             },
             "ResultPath": "$.DynamoDB",
@@ -82,9 +82,9 @@
                     }
                 }
             },
-            "Next": "Notify Account SFID Missing"
+            "Next": "Notify Account SFID Missing And Waiting For Approval"
         },
-        "Notify Account SFID Missing": {
+        "Notify Account SFID Missing And Waiting For Approval": {
             "Type": "Task",
             "Resource": "arn:aws:states:::lambda:invoke.waitForTaskToken",
             "ResultPath": null,
