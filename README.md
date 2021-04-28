@@ -2,15 +2,17 @@
 
 This project contains source code and supporting files for a serverless application that you can deploy with the SAM CLI. It includes the following files and folders:
 
+- diagrams - Architecture diagrams to accompany this PoC
 - functions - Code for the application's Lambda functions to check the value of, buy, or sell shares of a stock. It also contains unit tests for the Lambda functions' application code.
-- statemachines - Definition for the state machine that orchestrates the stock trading workflow.
+- statemachines - Definition for the state machine that orchestrates the first workflow in the migration application - account migrationt.
 - template.yaml - A template that defines the application's AWS resources.
 
-This application creates a stock trading workflow which runs on a pre-defined schedule (note that the schedule is disabled by default to avoid incurring charges). It demonstrates the power of Step Functions to orchestrate Lambda functions and other AWS resources to form complex and robust workflows, coupled with event-driven development using Amazon EventBridge.
+This application implements a PoC workflow showcasing the use of AWS Step Functions to manage individual steps in the Account Migration.
+
 
 AWS Step Functions lets you coordinate multiple AWS services into serverless workflows so you can build and update apps quickly. Using Step Functions, you can design and run workflows that stitch together services, such as AWS Lambda, AWS Fargate, and Amazon SageMaker, into feature-rich applications.
 
-The application uses several AWS resources, including Step Functions state machines, Lambda functions and an EventBridge rule trigger. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
+The application uses several AWS resources, including Step Functions state machines, Lambda functions. These resources are defined in the `template.yaml` file in this project. You can update the template to add AWS resources through the same deployment process that updates your application code.
 
 If you prefer to use an integrated development environment (IDE) to build and test the Lambda functions within your application, you can use the AWS Toolkit. The AWS Toolkit is an open source plug-in for popular IDEs that uses the SAM CLI to build and deploy serverless applications on AWS. The AWS Toolkit also adds a simplified step-through debugging experience for Lambda function code. See the following links to get started:
 
@@ -27,6 +29,28 @@ If you prefer to use an integrated development environment (IDE) to build and te
 * [Visual Studio](https://docs.aws.amazon.com/toolkit-for-visual-studio/latest/user-guide/welcome.html)
 
 The AWS Toolkit for VS Code includes full support for state machine visualization, enabling you to visualize your state machine in real time as you build. The AWS Toolkit for VS Code includes a language server for Amazon States Language, which lints your state machine definition to highlight common errors, provides auto-complete support, and code snippets for each state, enabling you to build state machines faster.
+
+## High-level workflow
+
+When the migration starts, we use DynamoDB Service Integration in `Record Start of Migration` step to record the start of a migration for the account in a DynamoDB table. This table is to be updated by subsequent steps and can be queried by frontend application through API Gateway -> Lambda to display a status of a migration.
+
+`Get SalesforceID From Mapping Table` state looks up SalesforceID from a AMSAccountId <-> SalesforceID DynamoDB mapping table.
+
+`Is SalesforceID In Mapping Table` is a Choice step, sending the execution into error handling state if SalesforceID is not present in the mapping table.
+
+`Notify Account SFID Missing And Waiting For Approval` triggers a Lambda function, which implements a callback pattern. At the moment it is a mock implementation, the real implementation would notify a customer about an issue with data and wait for callback.
+When the issue with data is resolved, by for example adding the missing SFID into the mapping table, the Client will be able to callback, using the TaskToken presented to the Lambda and stored in DynamoDB. The Execution will then proceed to `Get SalesforceID From Mapping Table` to retrieve the SFID again.
+This pattern is to be used to verify data integrity before inserting the data into RAM database in order to avoid rollbacks.
+
+`Enrich Task with SFID` showcases how to manipulate step input and output parameters through use of PASS steps.
+
+`Find Account in Database` step implements same choice-fix-callback pattern as `Get SalesforceID From Mapping Table`, ensuring we do not try to migrate an account that already exists in RAM database.
+
+`Transform Account` is a mock Lambda function, in real implementation it will be responsible for reading Account data from AMS Database, transforming them and saving them to RAM Database.
+
+The Step Functions Execution is, at the moment, triggered manually in the AWS Console. In real environment this would be triggered by a customer through Api Gateway -> Lambda function.
+
+
 
 ## Deploy the sample application
 
